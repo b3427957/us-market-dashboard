@@ -39,7 +39,7 @@ async function createGoogleTask(auth, taskTitle) {
     }
 }
 
-// 採用 FRED 官方 API 讀取，徹底擺脫 IP 阻擋與連線超時
+// 採用 FRED 官方 API 讀取
 async function fetchFredSeries(id, count = 60) {
     if (FRED_KEY) {
         const apiUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${FRED_KEY}&file_type=json&sort_order=desc&limit=${count}`;
@@ -53,7 +53,6 @@ async function fetchFredSeries(id, count = 60) {
             .map(r => ({ date: r.date, value: Number(r.value.toFixed(2)) }));
     }
 
-    // 若未設定 API Key，則嘗試備援下載
     const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`;
     const res = await fetch(url, {
         headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
@@ -243,6 +242,7 @@ async function main() {
         let alerts = [];
         if (kpis.VIX.value > 20) alerts.push(`🚨 VIX 超過 20（目前：${kpis.VIX.value}）`);
         if (kpis.HY_OAS.value > 4.5) alerts.push(`⚠️ 高收益債利差擴大（目前：${kpis.HY_OAS.value}%）`);
+        if (kpis.US10Y.value > 5.0) alerts.push(`🚨 美國 10 年期公債殖利率突破 5% 警戒線（目前：${kpis.US10Y.value}%）`);
         
         if (soxMMTHValue < 60) {
             alerts.push(`⚠️ 費半 MMTH 跌破 60 警戒線（目前值：${soxMMTHValue}%）`);
