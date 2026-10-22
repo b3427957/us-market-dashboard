@@ -11,11 +11,15 @@ const DATA_PATH = path.join(__dirname, 'data.json');
 
 async function authorize() {
     if (!fs.existsSync(CREDENTIALS_PATH) || !fs.existsSync(TOKEN_PATH)) return null;
-    const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH));
-    const { client_secret, client_id } = credentials.installed || credentials.web;
-    const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, 'urn:ietf:wg:oauth:2.0:oob');
-    oAuth2Client.setCredentials(JSON.parse(fs.readFileSync(TOKEN_PATH)));
-    return oAuth2Client;
+    try {
+        const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH));
+        const { client_secret, client_id } = credentials.installed || credentials.web;
+        const oAuth2Client = new google.auth.OAuth2(client_id, client_secret, 'urn:ietf:wg:oauth:2.0:oob');
+        oAuth2Client.setCredentials(JSON.parse(fs.readFileSync(TOKEN_PATH)));
+        return oAuth2Client;
+    } catch (e) {
+        return null;
+    }
 }
 
 async function createGoogleTask(auth, taskTitle) {
@@ -33,15 +37,33 @@ async function createGoogleTask(auth, taskTitle) {
     }
 }
 
-async function fetchFredSeries(id, count = 60) {
+// 增強型 FRED 資料抓取：包含完整偽裝標頭與自動重試機制
+async function fetchFredSeries(id, count = 60, retries = 3) {
     const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`;
-    const res = await fetch(url, { headers: { "User-Agent": "Mozilla/5.0" } });
-    const records = parse(await res.text(), { columns: true, skip_empty_lines: true, bom: true });
-    return records
-        .map(r => ({ date: String(r.observation_date || r.DATE || Object.values(r)[0]).trim(), value: parseFloat(r[id]) }))
-        .filter(r => r.date && !isNaN(r.value))
-        .slice(-count)
-        .map(r => ({ date: r.date, value: Number(r.value.toFixed(2)) }));
+    const headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.9',
+        'Connection': 'keep-alive'
+    };
+
+    for (let attempt = 1; attempt <= retries; attempt++) {
+        try {
+            const res = await fetch(url, { headers, timeout: 15000 });
+            if (!res.ok) throw new Error(`HTTP 錯誤: ${res.status}`);
+            const text = await res.text();
+            const records = parse(text, { columns: true, skip_empty_lines: true, bom: true });
+            return records
+                .map(r => ({ date: String(r.observation_date || r.DATE || Object.values(r)[0]).trim(), value: parseFloat(r[id]) }))
+                .filter(r => r.date && !isNaN(r.value))
+                .slice(-count)
+                .map(r => ({ date: r.date, value: Number(r.value.toFixed(2)) }));
+        } catch (err) {
+            console.warn(`FRED [${id}] 下載第 ${attempt} 次失敗 (${err.message})`);
+            if (attempt === retries) throw err;
+            await new Promise(r => setTimeout(r, 1500)); // 間隔 1.5 秒後重試
+        }
+    }
 }
 
 function fetchTVHistoryBars(symbol, count = 60) {
@@ -252,7 +274,7 @@ async function main() {
                     MMTH: mmthArr, 
                     S5TH: s5thArr, 
                     NDTH: ndthArr, 
-                    SXTH: soxHistoryArr.length > 0 ? soxHistoryArr : mmthArr, // 🌟 將 SXTH 歷史數據存入這裡
+                    SXTH: soxHistoryArr.length > 0 ? soxHistoryArr : mmthArr,
                     cross_avg: crossAvg, 
                     ndx_div: ndxDiv 
                 },
@@ -266,6 +288,7 @@ async function main() {
         console.log(`✅ 資料更新成功！快照日期: ${latestSnapshotDate}，共 ${finalOutput.count} 個交易日。`);
     } catch (err) {
         console.error("更新失敗:", err);
+        process.exit(1); // 確保若發生未捕獲錯誤時 Actions 會標記紅叉而非默默通過
     }
 }
 
