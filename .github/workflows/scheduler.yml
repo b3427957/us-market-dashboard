@@ -1,0 +1,36 @@
+name: Market Breadth Daily Update
+
+on:
+  schedule:
+    # 每天台灣時間早上 08:00 (UTC 00:00) 自動觸發
+    - cron: '0 0 * * *'
+  workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵測試觸發
+
+permissions:
+  contents: write # 賦予 Actions 權限自動儲存更新後的 data.json
+
+jobs:
+  update-data:
+    runs-on: ubuntu-latest
+    steps:
+      - name: 檢出專案代碼
+        uses: actions/checkout@v4
+
+      - name: 設定 Node.js 環境
+        uses: actions/setup-node@v4
+        with:
+          node-version: 18
+
+      - name: 安裝專案依賴套件
+        run: npm install
+
+      - name: 執行資料更新爬蟲
+        run: node update.js
+
+      - name: 自動將更新後的 data.json 提交存檔
+        run: |
+          git config --local user.email "action@github.com"
+          git config --local user.name "GitHub Action"
+          git add data.json
+          git commit -m "Auto update market data [skip ci]" || exit 0
+          git push
