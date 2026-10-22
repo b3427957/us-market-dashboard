@@ -4,10 +4,10 @@ on:
   schedule:
     # 每天台灣時間早上 08:00 (UTC 00:00) 自動觸發
     - cron: '0 0 * * *'
-  workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵測試觸發
+  workflow_dispatch: # 支援手動一鍵觸發
 
 permissions:
-  contents: write # 賦予寫入權限，讓 Actions 能自動儲存更新後的 data.json
+  contents: write
 
 jobs:
   update-data:
@@ -23,6 +23,13 @@ jobs:
 
       - name: 安裝專案依賴套件
         run: npm install
+
+      - name: 還原 Google 授權憑證
+        run: |
+          if [ -n "${{ secrets.GOOGLE_CREDENTIALS }}" ] && [ -n "${{ secrets.GOOGLE_TOKEN }}" ]; then
+            echo '${{ secrets.GOOGLE_CREDENTIALS }}' > credentials.json
+            echo '${{ secrets.GOOGLE_TOKEN }}' > token.json
+          fi
 
       - name: 執行資料更新爬蟲
         env:
