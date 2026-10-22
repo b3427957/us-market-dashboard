@@ -4,6 +4,7 @@
   "description": "US Market Breadth Dashboard",
   "main": "update.js",
   "dependencies": {
+    "csv-parse": "^5.5.6",
     "node-fetch": "^2.6.7",
     "ws": "^8.16.0"
   }
