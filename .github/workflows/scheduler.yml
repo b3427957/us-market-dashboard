@@ -7,7 +7,7 @@ on:
   workflow_dispatch: # 支援在 GitHub 網頁上手動一鍵測試觸發
 
 permissions:
-  contents: write # 賦予 Actions 權限自動儲存更新後的 data.json
+  contents: write # 賦予寫入權限，讓 Actions 能自動儲存更新後的 data.json
 
 jobs:
   update-data:
@@ -25,6 +25,8 @@ jobs:
         run: npm install
 
       - name: 執行資料更新爬蟲
+        env:
+          FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
         run: node update.js
 
       - name: 自動將更新後的 data.json 提交存檔
