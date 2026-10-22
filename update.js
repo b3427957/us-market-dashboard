@@ -9,6 +9,8 @@ const TOKEN_PATH = path.join(__dirname, 'token.json');
 const CREDENTIALS_PATH = path.join(__dirname, 'credentials.json');
 const DATA_PATH = path.join(__dirname, 'data.json');
 
+const FRED_KEY = process.env.FRED_API_KEY || '';
+
 async function authorize() {
     if (!fs.existsSync(CREDENTIALS_PATH) || !fs.existsSync(TOKEN_PATH)) return null;
     try {
@@ -37,33 +39,33 @@ async function createGoogleTask(auth, taskTitle) {
     }
 }
 
-// 增強型 FRED 資料抓取：包含完整偽裝標頭與自動重試機制
-async function fetchFredSeries(id, count = 60, retries = 3) {
-    const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`;
-    const headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
-        'Accept-Language': 'en-US,en;q=0.9',
-        'Connection': 'keep-alive'
-    };
-
-    for (let attempt = 1; attempt <= retries; attempt++) {
-        try {
-            const res = await fetch(url, { headers, timeout: 15000 });
-            if (!res.ok) throw new Error(`HTTP 錯誤: ${res.status}`);
-            const text = await res.text();
-            const records = parse(text, { columns: true, skip_empty_lines: true, bom: true });
-            return records
-                .map(r => ({ date: String(r.observation_date || r.DATE || Object.values(r)[0]).trim(), value: parseFloat(r[id]) }))
-                .filter(r => r.date && !isNaN(r.value))
-                .slice(-count)
-                .map(r => ({ date: r.date, value: Number(r.value.toFixed(2)) }));
-        } catch (err) {
-            console.warn(`FRED [${id}] 下載第 ${attempt} 次失敗 (${err.message})`);
-            if (attempt === retries) throw err;
-            await new Promise(r => setTimeout(r, 1500)); // 間隔 1.5 秒後重試
-        }
+// 採用 FRED 官方 API 讀取，徹底擺脫 IP 阻擋與連線超時
+async function fetchFredSeries(id, count = 60) {
+    if (FRED_KEY) {
+        const apiUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${FRED_KEY}&file_type=json&sort_order=desc&limit=${count}`;
+        const res = await fetch(apiUrl, { timeout: 10000 });
+        if (!res.ok) throw new Error(`FRED API 錯誤: ${res.statusText}`);
+        const data = await res.json();
+        return (data.observations || [])
+            .map(r => ({ date: r.date, value: parseFloat(r.value) }))
+            .filter(r => r.date && !isNaN(r.value))
+            .reverse()
+            .map(r => ({ date: r.date, value: Number(r.value.toFixed(2)) }));
     }
+
+    // 若未設定 API Key，則嘗試備援下載
+    const url = `https://fred.stlouisfed.org/graph/fredgraph.csv?id=${id}`;
+    const res = await fetch(url, {
+        headers: { 'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)' },
+        timeout: 10000
+    });
+    const text = await res.text();
+    const records = parse(text, { columns: true, skip_empty_lines: true, bom: true });
+    return records
+        .map(r => ({ date: String(r.observation_date || r.DATE || Object.values(r)[0]).trim(), value: parseFloat(r[id]) }))
+        .filter(r => r.date && !isNaN(r.value))
+        .slice(-count)
+        .map(r => ({ date: r.date, value: Number(r.value.toFixed(2)) }));
 }
 
 function fetchTVHistoryBars(symbol, count = 60) {
@@ -125,7 +127,6 @@ const soxSymbols = [
   'MPWR', 'SWKS', 'TER', 'WDC', 'QRVO', 'RMBS', 'LSCC', 'WOLF', 'ENTG', 'ONTO'
 ];
 
-// 🌟 核心：計算費半 30 檔成分股的每日歷史 200MA MMTH (SXTH)
 async function getSoxMMTHHistory(count = 60) {
     console.log("正在透過 TradingView 計算費半 30 檔成分股的歷史 MMTH (SXTH)...");
     
@@ -148,8 +149,6 @@ async function getSoxMMTHHistory(count = 60) {
 
     const validSymbols = Object.keys(stockBarsMap);
     const fullHistory = [];
-
-    // 取最後指定天數來算歷史
     const targetDates = dates.slice(-count);
 
     for (let i = 0; i < targetDates.length; i++) {
@@ -288,7 +287,7 @@ async function main() {
         console.log(`✅ 資料更新成功！快照日期: ${latestSnapshotDate}，共 ${finalOutput.count} 個交易日。`);
     } catch (err) {
         console.error("更新失敗:", err);
-        process.exit(1); // 確保若發生未捕獲錯誤時 Actions 會標記紅叉而非默默通過
+        process.exit(1);
     }
 }
 
