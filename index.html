@@ -1,0 +1,508 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>美股風險觀測</title>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js" crossorigin="anonymous"></script>
+    <style>
+        :root {
+            --bg-main: #090d12;
+            --bg-card: #0f161e;
+            --bg-subcard: #121b24;
+            --border-color: #1c2836;
+            --text-main: #f0f6fc;
+            --text-muted: #7d8590;
+            --accent-cyan: #39d2c0;
+            --accent-yellow: #e3b341;
+            --accent-purple: #bc8cff;
+            --accent-pink: #f778ba;
+            --accent-blue: #58a6ff;
+            --accent-orange: #ff8b3d;
+        }
+        * { box-sizing: border-box; }
+        body {
+            margin: 0;
+            padding: 16px 32px 32px 32px;
+            background-color: var(--bg-main);
+            color: var(--text-main);
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Microsoft JhengHei", Roboto, sans-serif;
+        }
+        .container { max-width: 1400px; margin: 0 auto; }
+
+        .app-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+            padding: 4px 2px;
+        }
+        .app-title { font-size: 22px; font-weight: 800; color: var(--text-main); margin: 0; }
+        .app-controls { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--text-muted); }
+        .ctrl-select, .ctrl-btn {
+            background: var(--bg-card);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            border-radius: 6px;
+            padding: 6px 12px;
+            font-size: 12px;
+            cursor: pointer;
+            outline: none;
+        }
+        .ctrl-select:hover, .ctrl-btn:hover { border-color: #384f66; background: var(--bg-subcard); }
+
+        .top-bar {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 14px 22px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        .top-metrics { display: flex; gap: 44px; }
+        .top-metric-label { font-size: 10.5px; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.8px; margin-bottom: 4px; }
+        .top-metric-value { font-size: 14px; font-weight: 700; color: var(--text-main); }
+        .top-metric-value.warn { color: var(--accent-yellow); }
+        .top-updated { font-size: 12px; color: var(--text-muted); }
+
+        .kpi-row {
+            display: grid;
+            grid-template-columns: repeat(8, 1fr);
+            gap: 10px;
+            margin-bottom: 18px;
+        }
+        .kpi-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 14px 12px;
+            position: relative;
+            overflow: hidden;
+        }
+        .kpi-card::before {
+            content: "";
+            position: absolute;
+            top: 0; left: 0; right: 0;
+            height: 2px;
+            background: var(--card-accent, var(--accent-cyan));
+        }
+        .kpi-title { font-size: 11px; color: var(--text-muted); margin-bottom: 8px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .kpi-val-wrap { display: flex; align-items: baseline; gap: 2px; margin-bottom: 8px; }
+        .kpi-val { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; color: #fff; }
+        .kpi-unit { font-size: 11px; color: var(--text-muted); font-weight: 600; }
+        .kpi-meta { font-size: 10px; color: var(--text-muted); line-height: 1.4; }
+
+        .section-panel {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 20px 22px;
+            margin-bottom: 18px;
+        }
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-end;
+            margin-bottom: 16px;
+        }
+        .section-tag { font-size: 10.5px; color: var(--accent-cyan); letter-spacing: 1px; text-transform: uppercase; margin-bottom: 3px; font-weight: 600; }
+        .section-title { font-size: 18px; font-weight: 700; margin: 0; }
+        .section-note { font-size: 11.5px; color: var(--text-muted); }
+
+        .breadth-charts-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 26px;
+            margin-bottom: 16px;
+        }
+        .subchart-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 8px;
+        }
+        .subchart-title { font-size: 13px; font-weight: 700; color: var(--text-main); }
+        .legend-inline { display: flex; gap: 10px; font-size: 11px; color: var(--text-muted); flex-wrap: wrap; }
+        .legend-item { display: flex; align-items: center; gap: 4px; }
+        .legend-dot { width: 9px; height: 2.5px; border-radius: 1px; display: inline-block; }
+
+        .canvas-wrap { position: relative; height: 215px; width: 100%; }
+
+        .breadth-Notes-grid {
+            display: grid;
+            grid-template-columns: repeat(4, 1fr);
+            gap: 12px;
+        }
+        .note-card {
+            background: var(--bg-subcard);
+            border: 1px solid var(--border-color);
+            border-radius: 8px;
+            padding: 11px 14px;
+        }
+        .note-card-title { font-size: 11.5px; font-weight: 700; color: var(--text-main); margin-bottom: 3px; }
+        .note-card-desc { font-size: 11px; color: var(--text-muted); }
+
+        .bottom-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 16px;
+        }
+        .bottom-card {
+            background: var(--bg-card);
+            border: 1px solid var(--border-color);
+            border-radius: 12px;
+            padding: 18px 20px;
+        }
+        .bottom-sub { font-size: 12.5px; font-weight: 700; margin: 8px 0 10px 0; color: var(--text-main); min-height: 18px; }
+        .canvas-wrap-sm { position: relative; height: 190px; width: 100%; }
+
+        @media (max-width: 1400px) {
+            .kpi-row { grid-template-columns: repeat(4, 1fr); }
+        }
+        @media (max-width: 1200px) {
+            .breadth-charts-grid, .bottom-grid { grid-template-columns: 1fr; }
+            .breadth-Notes-grid { grid-template-columns: repeat(2, 1fr); }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="app-header">
+            <h1 class="app-title">美股風險觀測</h1>
+            <div class="app-controls">
+                <span>顯示範圍</span>
+                <select id="rangeSelect" class="ctrl-select">
+                    <option value="41" selected>41 個交易日 (原圖比例)</option>
+                    <option value="60">60 個交易日</option>
+                    <option value="30">30 個交易日</option>
+                </select>
+                <button class="ctrl-btn" onclick="initDashboard()">重新整理</button>
+            </div>
+        </div>
+
+        <div class="top-bar">
+            <div class="top-metrics">
+                <div>
+                    <div class="top-metric-label">SNAPSHOT</div>
+                    <div class="top-metric-value" id="snapDate">--</div>
+                </div>
+                <div>
+                    <div class="top-metric-label">資料筆數</div>
+                    <div class="top-metric-value" id="dataCount">-- 個交易日</div>
+                </div>
+                <div>
+                    <div class="top-metric-label">RISK RULES</div>
+                    <div class="top-metric-value warn" id="riskStatus">尚未啟用</div>
+                </div>
+            </div>
+            <div class="top-updated" id="updatedTime">畫面更新 -- · 本機唯讀</div>
+        </div>
+
+        <div class="kpi-row" id="kpiRow"></div>
+
+        <div class="section-panel">
+            <div class="section-header">
+                <div>
+                    <div class="section-tag">MARKET BREADTH</div>
+                    <h2 class="section-title">市場廣度</h2>
+                </div>
+                <div class="section-note">閱讀順序：MMTH → S5TH / NDTH / SXTH → 平均 / 差異</div>
+            </div>
+
+            <div class="breadth-charts-grid">
+                <div>
+                    <div class="subchart-header">
+                        <div class="subchart-title">主要廣度與市場確認</div>
+                        <div class="legend-inline">
+                            <span class="legend-item"><i class="legend-dot" style="background:#39d2c0"></i>MMTH</span>
+                            <span class="legend-item"><i class="legend-dot" style="background:#e3b341"></i>S5TH</span>
+                            <span class="legend-item"><i class="legend-dot" style="background:#bc8cff"></i>NDTH</span>
+                            <span class="legend-item"><i class="legend-dot" style="background:#ff8b3d"></i>SXTH</span>
+                        </div>
+                    </div>
+                    <div class="canvas-wrap">
+                        <canvas id="breadthMainChart"></canvas>
+                    </div>
+                </div>
+
+                <div>
+                    <div class="subchart-header">
+                        <div class="subchart-title">跨股票池平均 / Nasdaq 領導差異</div>
+                        <div class="legend-inline">
+                            <span class="legend-item"><i class="legend-dot" style="background:#58a6ff"></i>跨股票池平均</span>
+                            <span class="legend-item"><i class="legend-dot" style="background:#f778ba"></i>Nasdaq領導差異</span>
+                        </div>
+                    </div>
+                    <div class="canvas-wrap">
+                        <canvas id="breadthDiffChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <div class="breadth-Notes-grid">
+                <div class="note-card">
+                    <div class="note-card-title">MMTH / SXTH</div>
+                    <div class="note-card-desc">主要廣泛市場與費半廣度觀測</div>
+                </div>
+                <div class="note-card">
+                    <div class="note-card-title">S5TH / NDTH</div>
+                    <div class="note-card-desc">大型股與 Nasdaq-100 確認</div>
+                </div>
+                <div class="note-card">
+                    <div class="note-card-title">Cross-Universe Average</div>
+                    <div class="note-card-desc">多重股票池綜合參考比例</div>
+                </div>
+                <div class="note-card">
+                    <div class="note-card-title">Nasdaq Leadership Divergence</div>
+                    <div class="note-card-desc">NDTH - (MMTH + S5TH) / 2</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="bottom-grid">
+            <div class="bottom-card">
+                <div class="section-header" style="margin-bottom:6px;">
+                    <div>
+                        <div class="section-tag">CREDIT</div>
+                        <h3 class="section-title" style="font-size:17px;">信用市場</h3>
+                    </div>
+                    <div class="section-note">單位：%</div>
+                </div>
+                <div class="bottom-sub"></div>
+                <div class="canvas-wrap-sm">
+                    <canvas id="creditChart"></canvas>
+                </div>
+            </div>
+
+            <div class="bottom-card">
+                <div class="section-header" style="margin-bottom:6px;">
+                    <div>
+                        <div class="section-tag">RATES</div>
+                        <h3 class="section-title" style="font-size:17px;">利率與殖利率拆解</h3>
+                    </div>
+                    <div class="section-note">目前僅接入名目 US10Y</div>
+                </div>
+                <div class="bottom-sub">US10Y · 名目殖利率</div>
+                <div class="canvas-wrap-sm">
+                    <canvas id="us10yChart"></canvas>
+                </div>
+            </div>
+
+            <div class="bottom-card">
+                <div class="section-header" style="margin-bottom:6px;">
+                    <div>
+                        <div class="section-tag">VOLATILITY</div>
+                        <h3 class="section-title" style="font-size:17px;">股票波動率</h3>
+                    </div>
+                    <div class="section-note">與利率分開判讀</div>
+                </div>
+                <div class="bottom-sub">VIX</div>
+                <div class="canvas-wrap-sm">
+                    <canvas id="vixChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let chartInstances = {};
+
+        function formatDates(dateArray) {
+            if (!Array.isArray(dateArray)) return [];
+            return dateArray.map(d => {
+                if (!d) return '';
+                const parts = String(d).split('-');
+                return parts.length === 3 ? `${parts[1]}/${parts[2]}` : String(d);
+            });
+        }
+
+        function sliceSeries(arr, limit) {
+            return Array.isArray(arr) ? arr.slice(-limit) : [];
+        }
+
+        function calcBounds(arrays, padRatio = 0.08) {
+            const flat = arrays.flat().filter(v => typeof v === 'number' && !isNaN(v));
+            if (flat.length === 0) return { min: 0, max: 100 };
+            const minVal = Math.min(...flat);
+            const maxVal = Math.max(...flat);
+            const span = (maxVal - minVal) || 1;
+            return {
+                min: Number((minVal - span * padRatio).toFixed(2)),
+                max: Number((maxVal + span * padRatio).toFixed(2))
+            };
+        }
+
+        function createDarkChartConfig(labels, datasets, dualAxis = false, decimals = 1) {
+            const midIndex = Math.floor((labels.length - 1) / 2);
+            const leftArrays = datasets.filter(d => !d.yAxisID || d.yAxisID === 'y').map(d => d.data);
+            const leftBounds = calcBounds(leftArrays);
+
+            const scales = {
+                x: {
+                    grid: { display: false },
+                    ticks: {
+                        color: '#6e7681',
+                        font: { size: 10.5 },
+                        maxRotation: 0,
+                        autoSkip: false,
+                        callback: function(val, index) {
+                            if (labels.length <= 3) return labels[index];
+                            if (index === 0 || index === midIndex || index === labels.length - 1) {
+                                return labels[index];
+                            }
+                            return null;
+                        }
+                    }
+                },
+                y: {
+                    position: 'left',
+                    min: leftBounds.min,
+                    max: leftBounds.max,
+                    grid: { color: 'rgba(255,255,255,0.04)' },
+                    ticks: {
+                        color: '#6e7681',
+                        font: { size: 10.5 },
+                        count: 5,
+                        callback: v => Number(v).toFixed(decimals)
+                    }
+                }
+            };
+            if (dualAxis) {
+                const rightArrays = datasets.filter(d => d.yAxisID === 'y1').map(d => d.data);
+                const rightBounds = calcBounds(rightArrays);
+                scales.y1 = {
+                    position: 'right',
+                    min: rightBounds.min,
+                    max: rightBounds.max,
+                    grid: { drawOnChartArea: false },
+                    ticks: {
+                        color: '#6e7681',
+                        font: { size: 10.5 },
+                        count: 5,
+                        callback: v => Number(v).toFixed(decimals)
+                    }
+                };
+            }
+            return {
+                type: 'line',
+                data: { labels, datasets },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    interaction: { mode: 'index', intersect: false },
+                    plugins: { legend: { display: false } },
+                    scales
+                }
+            };
+        }
+
+        function renderChart(id, config) {
+            if (chartInstances[id]) chartInstances[id].destroy();
+            chartInstances[id] = new Chart(document.getElementById(id), config);
+        }
+
+        async function initDashboard() {
+            try {
+                const limit = parseInt(document.getElementById('rangeSelect').value, 10) || 41;
+                const res = await fetch('data.json?t=' + Date.now());
+                if (!res.ok) throw new Error("無法讀取 data.json");
+                const data = await res.json();
+
+                const bLen = data.series?.breadth?.date ? sliceSeries(data.series.breadth.date, limit).length : 0;
+                const vLen = data.series?.vix?.date ? sliceSeries(data.series.vix.date, limit).length : 0;
+                const displayCount = bLen > 1 ? bLen : vLen;
+
+                document.getElementById('snapDate').innerText = data.snapshotDate || '--';
+                document.getElementById('dataCount').innerText = `${displayCount} 個交易日`;
+                document.getElementById('riskStatus').innerText = data.riskRulesStatus || '尚未啟用';
+                document.getElementById('updatedTime').innerText = `畫面更新 ${data.updatedAt} · 本機唯讀`;
+
+                const kpiMetaConfig = [
+                    { key: 'MMTH', label: 'MMTH · 主要廣度', unit: '%', color: '#39d2c0' },
+                    { key: 'S5TH', label: 'S5TH · S&P 500', unit: '%', color: '#e3b341' },
+                    { key: 'NDTH', label: 'NDTH · Nasdaq-100', unit: '%', color: '#bc8cff' },
+                    { key: 'SXTH', label: 'SXTH · 費半廣度', unit: '%', color: '#ff8b3d' },
+                    { key: 'HY_OAS', label: 'HY OAS', unit: '%', color: '#e3b341' },
+                    { key: 'CCC_OAS', label: 'CCC OAS', unit: '%', color: '#f778ba' },
+                    { key: 'US10Y', label: 'US10Y · 名目', unit: '%', color: '#58a6ff' },
+                    { key: 'VIX', label: 'VIX', unit: '', color: '#e6edf3' }
+                ];
+
+                const kpiRow = document.getElementById('kpiRow');
+                kpiRow.innerHTML = '';
+                kpiMetaConfig.forEach(cfg => {
+                    const item = (data.kpis && data.kpis[cfg.key]) ? data.kpis[cfg.key] : { value: '--', change: 0, date: '--' };
+                    const chgStr = item.change >= 0 ? `+${item.change.toFixed(2)}` : item.change.toFixed(2);
+                    const valStr = typeof item.value === 'number' ? item.value.toFixed(2) : item.value;
+                    const card = document.createElement('div');
+                    card.className = 'kpi-card';
+                    card.style.setProperty('--card-accent', cfg.color);
+                    card.innerHTML = `
+                        <div class="kpi-title">${cfg.label}</div>
+                        <div class="kpi-val-wrap">
+                            <span class="kpi-val">${valStr}</span>
+                            <span class="kpi-unit">${cfg.unit}</span>
+                        </div>
+                        <div class="kpi-meta">
+                            前次變化 ${chgStr}<br>
+                            觀測日 ${item.date || data.snapshotDate || '--'}
+                        </div>
+                    `;
+                    kpiRow.appendChild(card);
+                });
+
+                const ptStyle = { borderWidth: 1.6, pointRadius: 2.2, pointBackgroundColor: '#0f161e', pointBorderWidth: 1.5, tension: 0.1 };
+
+                // 1. 市場廣度左圖（加入 SXTH 橘金色線條）
+                if (data.series && data.series.breadth) {
+                    const b = data.series.breadth;
+                    const bLabels = formatDates(sliceSeries(b.date, limit));
+
+                    renderChart('breadthMainChart', createDarkChartConfig(bLabels, [
+                        { label: 'MMTH', data: sliceSeries(b.MMTH, limit).map(Number), borderColor: '#39d2c0', pointBorderColor: '#39d2c0', ...ptStyle },
+                        { label: 'S5TH', data: sliceSeries(b.S5TH, limit).map(Number), borderColor: '#e3b341', pointBorderColor: '#e3b341', ...ptStyle },
+                        { label: 'NDTH', data: sliceSeries(b.NDTH, limit).map(Number), borderColor: '#bc8cff', pointBorderColor: '#bc8cff', ...ptStyle },
+                        { label: 'SXTH', data: sliceSeries(b.SXTH || b.MMTH, limit).map(Number), borderColor: '#ff8b3d', pointBorderColor: '#ff8b3d', ...ptStyle }
+                    ], false, 1));
+
+                    renderChart('breadthDiffChart', createDarkChartConfig(bLabels, [
+                        { label: '跨股票池平均', data: sliceSeries(b.cross_avg, limit).map(Number), borderColor: '#58a6ff', pointBorderColor: '#58a6ff', ...ptStyle },
+                        { label: 'Nasdaq領導差異', data: sliceSeries(b.ndx_div, limit).map(Number), borderColor: '#f778ba', pointBorderColor: '#f778ba', ...ptStyle }
+                    ], false, 1));
+                }
+
+                if (data.series && data.series.credit) {
+                    const c = data.series.credit;
+                    const cLabels = formatDates(sliceSeries(c.date, limit));
+                    renderChart('creditChart', createDarkChartConfig(cLabels, [
+                        { label: 'HY OAS', data: sliceSeries(c.HY_OAS, limit).map(Number), borderColor: '#e3b341', pointBorderColor: '#e3b341', yAxisID: 'y', ...ptStyle },
+                        { label: 'CCC OAS', data: sliceSeries(c.CCC_OAS, limit).map(Number), borderColor: '#f778ba', pointBorderColor: '#f778ba', yAxisID: 'y1', ...ptStyle }
+                    ], true, 2));
+                }
+
+                if (data.series && data.series.us10y) {
+                    const u = data.series.us10y;
+                    renderChart('us10yChart', createDarkChartConfig(formatDates(sliceSeries(u.date, limit)), [
+                        { label: 'US10Y', data: sliceSeries(u.value, limit).map(Number), borderColor: '#58a6ff', pointBorderColor: '#58a6ff', ...ptStyle }
+                    ], false, 2));
+                }
+
+                if (data.series && data.series.vix) {
+                    const v = data.series.vix;
+                    renderChart('vixChart', createDarkChartConfig(formatDates(sliceSeries(v.date, limit)), [
+                        { label: 'VIX', data: sliceSeries(v.value, limit).map(Number), borderColor: '#e6edf3', pointBorderColor: '#e6edf3', ...ptStyle }
+                    ], false, 1));
+                }
+
+            } catch (err) {
+                console.error("儀表板載入錯誤:", err);
+            }
+        }
+
+        document.getElementById('rangeSelect').addEventListener('change', initDashboard);
+        initDashboard();
+    </script>
+</body>
+</html>
