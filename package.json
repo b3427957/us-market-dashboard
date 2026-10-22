@@ -1,0 +1,10 @@
+{
+  "name": "us-market-dashboard",
+  "version": "1.0.0",
+  "description": "US Market Breadth Dashboard",
+  "main": "update.js",
+  "dependencies": {
+    "node-fetch": "^2.6.7",
+    "ws": "^8.16.0"
+  }
+}
