@@ -1,8 +1,8 @@
 {
-  "updatedAt": "2026/10/24 下午12:00:55",
+  "updatedAt": "2026/10/24 下午9:26:30",
   "snapshotDate": "2026-10-23",
   "count": 60,
-  "riskRulesStatus": "觸發 1 項警報",
+  "riskRulesStatus": "觸發 2 項警報",
   "kpis": {
     "MMTH": {
       "date": "2026-10-23",
