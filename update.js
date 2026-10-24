@@ -11,8 +11,12 @@ const DATA_PATH = path.join(__dirname, 'data.json');
 
 const FRED_KEY = process.env.FRED_API_KEY || '';
 
+// 1. Google Tasks 授權認證
 async function authorize() {
-    if (!fs.existsSync(CREDENTIALS_PATH) || !fs.existsSync(TOKEN_PATH)) return null;
+    if (!fs.existsSync(CREDENTIALS_PATH) || !fs.existsSync(TOKEN_PATH)) {
+        console.log("未檢測到 Google 憑證檔案 (credentials.json / token.json)，略過 Google Tasks 推播。");
+        return null;
+    }
     try {
         const credentials = JSON.parse(fs.readFileSync(CREDENTIALS_PATH));
         const { client_secret, client_id } = credentials.installed || credentials.web;
@@ -20,15 +24,21 @@ async function authorize() {
         oAuth2Client.setCredentials(JSON.parse(fs.readFileSync(TOKEN_PATH)));
         return oAuth2Client;
     } catch (e) {
+        console.error("Google 授權解析失敗:", e.message);
         return null;
     }
 }
 
+// 2. 建立 Google Tasks 待辦提醒
 async function createGoogleTask(auth, taskTitle) {
     if (!auth) return;
     const service = google.tasks({ version: 'v1', auth });
     try {
         const lists = await service.tasklists.list({ maxResults: 10 });
+        if (!lists.data.items || lists.data.items.length === 0) {
+            console.warn("找不到可用的 Google Tasks 清單");
+            return;
+        }
         await service.tasks.insert({
             tasklist: lists.data.items[0].id,
             requestBody: { title: taskTitle, due: new Date().toISOString() }
@@ -39,7 +49,7 @@ async function createGoogleTask(auth, taskTitle) {
     }
 }
 
-// 採用 FRED 官方 API 讀取
+// 3. FRED 數據讀取（優先採用官方 API，無金鑰時回退 CSV）
 async function fetchFredSeries(id, count = 60) {
     if (FRED_KEY) {
         const apiUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${FRED_KEY}&file_type=json&sort_order=desc&limit=${count}`;
@@ -67,6 +77,7 @@ async function fetchFredSeries(id, count = 60) {
         .map(r => ({ date: r.date, value: Number(r.value.toFixed(2)) }));
 }
 
+// 4. TradingView 歷史 K 棒獲取
 function fetchTVHistoryBars(symbol, count = 60) {
     return new Promise((resolve) => {
         const ws = new WebSocket('wss://data.tradingview.com/socket.io/websocket', {
@@ -120,15 +131,16 @@ function fetchTVHistoryBars(symbol, count = 60) {
     });
 }
 
+// 費半 30 檔成分股代碼清單
 const soxSymbols = [
   'NVDA', 'AMD', 'AVGO', 'TXN', 'QCOM', 'INTC', 'AMAT', 'LRCX', 'MU', 'KLAC',
   'SNPS', 'CDNS', 'NXPI', 'MRVL', 'ADI', 'ASML', 'TSM', 'STM', 'ON', 'MCHP',
   'MPWR', 'SWKS', 'TER', 'WDC', 'QRVO', 'RMBS', 'LSCC', 'WOLF', 'ENTG', 'ONTO'
 ];
 
+// 5. 動態計算費半成份股高於 200MA 比率 (SXTH)
 async function getSoxMMTHHistory(count = 60) {
     console.log("正在透過 TradingView 計算費半 30 檔成分股的歷史 MMTH (SXTH)...");
-    
     let dates = [];
     const stockBarsMap = {};
 
@@ -137,9 +149,7 @@ async function getSoxMMTHHistory(count = 60) {
             const bars = await fetchTVHistoryBars(symbol, 350);
             if (bars && bars.length > 0) {
                 stockBarsMap[symbol] = bars;
-                if (dates.length === 0) {
-                    dates = bars.map(b => b.date);
-                }
+                if (dates.length === 0) dates = bars.map(b => b.date);
             }
         } catch (e) {}
     }
@@ -165,9 +175,7 @@ async function getSoxMMTHHistory(count = 60) {
                 const ma200 = sum / 200;
 
                 counted++;
-                if (currentPrice > ma200) {
-                    above200MA++;
-                }
+                if (currentPrice > ma200) above200MA++;
             }
         }
 
@@ -180,6 +188,7 @@ async function getSoxMMTHHistory(count = 60) {
     return { latestVal, historyArr: fullHistory.map(h => h.value) };
 }
 
+// 6. 主程序
 async function main() {
     console.log("正在下載 FRED 與 TradingView 過去 60 個交易日的真實歷史數據...");
     try {
@@ -239,18 +248,38 @@ async function main() {
             VIX: calcFredKpi(vix)
         };
 
+        // 完整警報條件判斷
         let alerts = [];
-        if (kpis.VIX.value > 20) alerts.push(`🚨 VIX 超過 20（目前：${kpis.VIX.value}）`);
-        if (kpis.HY_OAS.value > 4.5) alerts.push(`⚠️ 高收益債利差擴大（目前：${kpis.HY_OAS.value}%）`);
-        if (kpis.US10Y.value > 5.0) alerts.push(`🚨 美國 10 年期公債殖利率突破 5% 警戒線（目前：${kpis.US10Y.value}%）`);
-        
+
+        // 1. 市場廣度警戒（MMTH 與 SXTH 跌破 60% 門檻）
+        if (kpis.MMTH.value < 60) {
+            alerts.push(`⚠️ 美股全市場 MMTH 跌破 60 警戒線（目前值：${kpis.MMTH.value}%）`);
+        }
         if (soxMMTHValue < 60) {
-            alerts.push(`⚠️ 費半 MMTH 跌破 60 警戒線（目前值：${soxMMTHValue}%）`);
+            alerts.push(`⚠️ 費半 SXTH 跌破 60 警戒線（目前值：${soxMMTHValue}%）`);
         }
 
+        // 2. 美國 10 年期公債殖利率警戒（大於 5.0%）
+        if (kpis.US10Y.value > 5.0) {
+            alerts.push(`🚨 美國 10 年期公債殖利率突破 5% 警戒線（目前：${kpis.US10Y.value}%）`);
+        }
+
+        // 3. 恐慌指數與信用利差警戒
+        if (kpis.VIX.value > 20) {
+            alerts.push(`🚨 VIX 超過 20（目前：${kpis.VIX.value}）`);
+        }
+        if (kpis.HY_OAS.value > 4.5) {
+            alerts.push(`⚠️ 高收益債利差擴大（目前：${kpis.HY_OAS.value}%）`);
+        }
+
+        // 觸發警報時建立 Google Tasks 任務
         if (alerts.length > 0) {
             const auth = await authorize();
-            for (const msg of alerts) await createGoogleTask(auth, msg);
+            if (auth) {
+                for (const msg of alerts) {
+                    await createGoogleTask(auth, msg);
+                }
+            }
         }
 
         const creditMap = new Map(cccOas.map(r => [r.date, r.value]));
@@ -265,7 +294,7 @@ async function main() {
             updatedAt: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
             snapshotDate: latestSnapshotDate,
             count: breadthDates.length || vix.length,
-            riskRulesStatus: alerts.length > 0 ? `觸發 ${alerts.length} 項警報` : "尚未啟用",
+            riskRulesStatus: alerts.length > 0 ? `觸發 ${alerts.length} 項警報` : "市場風險正常",
             kpis,
             series: {
                 breadth: { 
