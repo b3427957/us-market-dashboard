@@ -252,38 +252,42 @@ async function main() {
             VIX: calcFredKpi(vix)
         };
 
-        // --- 完整警報條件判斷與正名 ---
+        // 取得最新快照日期作為標題日期標籤（例如 [2026-10-23]）
+        const latestSnapshotDate = breadthDates[breadthDates.length - 1] || vix[vix.length - 1].date;
+        const dateTag = `[${latestSnapshotDate}]`;
+
+        // --- 完整警報條件判斷（含日期標籤與 4.8% 美債門檻）---
         let alerts = [];
 
         // 1. 全市場廣度 (MMTH)
         if (kpis.MMTH.value < 60) {
-            alerts.push(`⚠️ 美股全市場 MMTH 跌破 60% 警戒線（目前值：${kpis.MMTH.value}%）`);
+            alerts.push(`${dateTag} ⚠️ 美股全市場 MMTH 跌破 60% 警戒線（目前值：${kpis.MMTH.value}%）`);
         }
 
         // 2. 費城半導體廣度 (SXTH)
         if (soxMMTHValue < 60) {
-            alerts.push(`⚠️ 費城半導體 SXTH 跌破 60% 警戒線（目前值：${soxMMTHValue}%）`);
+            alerts.push(`${dateTag} ⚠️ 費城半導體 SXTH 跌破 60% 警戒線（目前值：${soxMMTHValue}%）`);
         }
 
         // 3. 標普 500 (S5TH) 與那斯達克 100 (NDTH)
         if (kpis.S5TH.value < 60) {
-            alerts.push(`⚠️ 標普 500 S5TH 跌破 60% 警戒線（目前值：${kpis.S5TH.value}%）`);
+            alerts.push(`${dateTag} ⚠️ 標普 500 S5TH 跌破 60% 警戒線（目前值：${kpis.S5TH.value}%）`);
         }
         if (kpis.NDTH.value < 60) {
-            alerts.push(`⚠️ 那斯達克 100 NDTH 跌破 60% 警戒線（目前值：${kpis.NDTH.value}%）`);
+            alerts.push(`${dateTag} ⚠️ 那斯達克 100 NDTH 跌破 60% 警戒線（目前值：${kpis.NDTH.value}%）`);
         }
 
-        // 4. 美國 10 年期公債殖利率
-        if (kpis.US10Y.value > 5.0) {
-            alerts.push(`🚨 美國 10 年期公債殖利率突破 5% 警戒線（目前：${kpis.US10Y.value}%）`);
+        // 4. 美國 10 年期公債殖利率（門檻調整為 > 4.8%）
+        if (kpis.US10Y.value > 4.8) {
+            alerts.push(`${dateTag} 🚨 美國 10 年期公債殖利率突破 4.8% 警戒線（目前：${kpis.US10Y.value}%）`);
         }
 
         // 5. 恐慌指數與高收益債信用利差
         if (kpis.VIX.value > 20) {
-            alerts.push(`🚨 VIX 恐慌指數超過 20（目前：${kpis.VIX.value}）`);
+            alerts.push(`${dateTag} 🚨 VIX 恐慌指數超過 20（目前：${kpis.VIX.value}）`);
         }
         if (kpis.HY_OAS.value > 4.5) {
-            alerts.push(`⚠️ 高收益債利差擴大超過 4.5%（目前：${kpis.HY_OAS.value}%）`);
+            alerts.push(`${dateTag} ⚠️ 高收益債利差擴大超過 4.5%（目前：${kpis.HY_OAS.value}%）`);
         }
 
         // --- Google Tasks 推播執行（含 600ms 延遲防漏訊）---
@@ -303,8 +307,6 @@ async function main() {
         const hyValues = hyOas.map(r => r.value);
         const fallbackCcc = cccOas.length > 0 ? cccOas[cccOas.length - 1].value : 0;
         const cccValues = hyOas.map(r => creditMap.has(r.date) ? creditMap.get(r.date) : fallbackCcc);
-
-        const latestSnapshotDate = breadthDates[breadthDates.length - 1] || vix[vix.length - 1].date;
 
         const finalOutput = {
             updatedAt: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
