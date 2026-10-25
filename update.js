@@ -49,7 +49,7 @@ async function createGoogleTask(auth, taskTitle) {
     }
 }
 
-// 3. FRED 數據讀取（優先採用官方 API，無金鑰時回退 CSV）
+// 3. FRED 數據讀取（優先官方 API，無金鑰時回退 CSV）
 async function fetchFredSeries(id, count = 60) {
     if (FRED_KEY) {
         const apiUrl = `https://api.stlouisfed.org/fred/series/observations?series_id=${id}&api_key=${FRED_KEY}&file_type=json&sort_order=desc&limit=${count}`;
@@ -131,7 +131,7 @@ function fetchTVHistoryBars(symbol, count = 60) {
     });
 }
 
-// 費半 30 檔成分股代碼清單
+// 費半 30 檔成分股清單
 const soxSymbols = [
   'NVDA', 'AMD', 'AVGO', 'TXN', 'QCOM', 'INTC', 'AMAT', 'LRCX', 'MU', 'KLAC',
   'SNPS', 'CDNS', 'NXPI', 'MRVL', 'ADI', 'ASML', 'TSM', 'STM', 'ON', 'MCHP',
@@ -239,85 +239,4 @@ async function main() {
 
         const kpis = {
             MMTH: calcBreadthKpi(mmthArr, breadthDates),
-            S5TH: calcBreadthKpi(s5thArr, breadthDates),
-            NDTH: calcBreadthKpi(ndthArr, breadthDates),
-            SXTH: { date: breadthDates[breadthDates.length - 1] || "-", value: soxMMTHValue, change: soxHistoryArr.length > 1 ? Number((soxHistoryArr[soxHistoryArr.length - 1] - soxHistoryArr[soxHistoryArr.length - 2]).toFixed(2)) : 0 },
-            HY_OAS: calcFredKpi(hyOas),
-            CCC_OAS: calcFredKpi(cccOas),
-            US10Y: calcFredKpi(us10y),
-            VIX: calcFredKpi(vix)
-        };
-
-        // 完整警報條件判斷
-        let alerts = [];
-
-        // 1. 市場廣度警戒（MMTH 與 SXTH 跌破 60% 門檻）
-        if (kpis.MMTH.value < 60) {
-            alerts.push(`⚠️ 美股全市場 MMTH 跌破 60 警戒線（目前值：${kpis.MMTH.value}%）`);
-        }
-        if (soxMMTHValue < 60) {
-            alerts.push(`⚠️ 費半 SXTH 跌破 60 警戒線（目前值：${soxMMTHValue}%）`);
-        }
-
-        // 2. 美國 10 年期公債殖利率警戒（大於 5.0%）
-        if (kpis.US10Y.value > 5.0) {
-            alerts.push(`🚨 美國 10 年期公債殖利率突破 5% 警戒線（目前：${kpis.US10Y.value}%）`);
-        }
-
-        // 3. 恐慌指數與信用利差警戒
-        if (kpis.VIX.value > 20) {
-            alerts.push(`🚨 VIX 超過 20（目前：${kpis.VIX.value}）`);
-        }
-        if (kpis.HY_OAS.value > 4.5) {
-            alerts.push(`⚠️ 高收益債利差擴大（目前：${kpis.HY_OAS.value}%）`);
-        }
-
-        // 觸發警報時建立 Google Tasks 任務
-        if (alerts.length > 0) {
-            const auth = await authorize();
-            if (auth) {
-                for (const msg of alerts) {
-                    await createGoogleTask(auth, msg);
-                }
-            }
-        }
-
-        const creditMap = new Map(cccOas.map(r => [r.date, r.value]));
-        const creditDates = hyOas.map(r => r.date);
-        const hyValues = hyOas.map(r => r.value);
-        const fallbackCcc = cccOas.length > 0 ? cccOas[cccOas.length - 1].value : 0;
-        const cccValues = hyOas.map(r => creditMap.has(r.date) ? creditMap.get(r.date) : fallbackCcc);
-
-        const latestSnapshotDate = breadthDates[breadthDates.length - 1] || vix[vix.length - 1].date;
-
-        const finalOutput = {
-            updatedAt: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
-            snapshotDate: latestSnapshotDate,
-            count: breadthDates.length || vix.length,
-            riskRulesStatus: alerts.length > 0 ? `觸發 ${alerts.length} 項警報` : "市場風險正常",
-            kpis,
-            series: {
-                breadth: { 
-                    date: breadthDates, 
-                    MMTH: mmthArr, 
-                    S5TH: s5thArr, 
-                    NDTH: ndthArr, 
-                    SXTH: soxHistoryArr.length > 0 ? soxHistoryArr : mmthArr,
-                    cross_avg: crossAvg, 
-                    ndx_div: ndxDiv 
-                },
-                credit: { date: creditDates, HY_OAS: hyValues, CCC_OAS: cccValues },
-                us10y: { date: us10y.map(r => r.date), value: us10y.map(r => r.value) },
-                vix: { date: vix.map(r => r.date), value: vix.map(r => r.value) }
-            }
-        };
-
-        fs.writeFileSync(DATA_PATH, JSON.stringify(finalOutput, null, 2), 'utf8');
-        console.log(`✅ 資料更新成功！快照日期: ${latestSnapshotDate}，共 ${finalOutput.count} 個交易日。`);
-    } catch (err) {
-        console.error("更新失敗:", err);
-        process.exit(1);
-    }
-}
-
-main();
+            S5TH: calcBreadthKpi(s5thArr,
