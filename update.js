@@ -239,4 +239,101 @@ async function main() {
 
         const kpis = {
             MMTH: calcBreadthKpi(mmthArr, breadthDates),
-            S5TH: calcBreadthKpi(s5thArr,
+            S5TH: calcBreadthKpi(s5thArr, breadthDates),
+            NDTH: calcBreadthKpi(ndthArr, breadthDates),
+            SXTH: { 
+                date: breadthDates[breadthDates.length - 1] || "-", 
+                value: soxMMTHValue, 
+                change: soxHistoryArr.length > 1 ? Number((soxHistoryArr[soxHistoryArr.length - 1] - soxHistoryArr[soxHistoryArr.length - 2]).toFixed(2)) : 0 
+            },
+            HY_OAS: calcFredKpi(hyOas),
+            CCC_OAS: calcFredKpi(cccOas),
+            US10Y: calcFredKpi(us10y),
+            VIX: calcFredKpi(vix)
+        };
+
+        // --- 完整警報條件判斷與正名 ---
+        let alerts = [];
+
+        // 1. 全市場廣度 (MMTH)
+        if (kpis.MMTH.value < 60) {
+            alerts.push(`⚠️ 美股全市場 MMTH 跌破 60% 警戒線（目前值：${kpis.MMTH.value}%）`);
+        }
+
+        // 2. 費城半導體廣度 (SXTH)
+        if (soxMMTHValue < 60) {
+            alerts.push(`⚠️ 費城半導體 SXTH 跌破 60% 警戒線（目前值：${soxMMTHValue}%）`);
+        }
+
+        // 3. 標普 500 (S5TH) 與那斯達克 100 (NDTH)
+        if (kpis.S5TH.value < 60) {
+            alerts.push(`⚠️ 標普 500 S5TH 跌破 60% 警戒線（目前值：${kpis.S5TH.value}%）`);
+        }
+        if (kpis.NDTH.value < 60) {
+            alerts.push(`⚠️ 那斯達克 100 NDTH 跌破 60% 警戒線（目前值：${kpis.NDTH.value}%）`);
+        }
+
+        // 4. 美國 10 年期公債殖利率
+        if (kpis.US10Y.value > 5.0) {
+            alerts.push(`🚨 美國 10 年期公債殖利率突破 5% 警戒線（目前：${kpis.US10Y.value}%）`);
+        }
+
+        // 5. 恐慌指數與高收益債信用利差
+        if (kpis.VIX.value > 20) {
+            alerts.push(`🚨 VIX 恐慌指數超過 20（目前：${kpis.VIX.value}）`);
+        }
+        if (kpis.HY_OAS.value > 4.5) {
+            alerts.push(`⚠️ 高收益債利差擴大超過 4.5%（目前：${kpis.HY_OAS.value}%）`);
+        }
+
+        // --- Google Tasks 推播執行（含 600ms 延遲防漏訊）---
+        if (alerts.length > 0) {
+            console.log(`觸發 ${alerts.length} 項警報，準備建立 Google Tasks 提醒...`);
+            const auth = await authorize();
+            if (auth) {
+                for (const msg of alerts) {
+                    await createGoogleTask(auth, msg);
+                    await new Promise(resolve => setTimeout(resolve, 600));
+                }
+            }
+        }
+
+        const creditMap = new Map(cccOas.map(r => [r.date, r.value]));
+        const creditDates = hyOas.map(r => r.date);
+        const hyValues = hyOas.map(r => r.value);
+        const fallbackCcc = cccOas.length > 0 ? cccOas[cccOas.length - 1].value : 0;
+        const cccValues = hyOas.map(r => creditMap.has(r.date) ? creditMap.get(r.date) : fallbackCcc);
+
+        const latestSnapshotDate = breadthDates[breadthDates.length - 1] || vix[vix.length - 1].date;
+
+        const finalOutput = {
+            updatedAt: new Date().toLocaleString('zh-TW', { timeZone: 'Asia/Taipei' }),
+            snapshotDate: latestSnapshotDate,
+            count: breadthDates.length || vix.length,
+            riskRulesStatus: alerts.length > 0 ? `觸發 ${alerts.length} 項警報` : "市場風險正常",
+            kpis,
+            series: {
+                breadth: { 
+                    date: breadthDates, 
+                    MMTH: mmthArr, 
+                    S5TH: s5thArr, 
+                    NDTH: ndthArr, 
+                    SXTH: soxHistoryArr.length > 0 ? soxHistoryArr : mmthArr,
+                    cross_avg: crossAvg, 
+                    ndx_div: ndxDiv 
+                },
+                credit: { date: creditDates, HY_OAS: hyValues, CCC_OAS: cccValues },
+                us10y: { date: us10y.map(r => r.date), value: us10y.map(r => r.value) },
+                vix: { date: vix.map(r => r.date), value: vix.map(r => r.value) }
+            }
+        };
+
+        fs.writeFileSync(DATA_PATH, JSON.stringify(finalOutput, null, 2), 'utf8');
+        console.log(`✅ 資料更新成功！快照日期: ${latestSnapshotDate}，共 ${finalOutput.count} 個交易日。`);
+    } catch (err) {
+        console.error("更新失敗:", err);
+        process.exit(1);
+    }
+}
+
+main();
